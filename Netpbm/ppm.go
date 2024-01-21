@@ -52,7 +52,6 @@ func ReadPPM(filename string) (*PPM, error) {
 			if maxval < 0 || maxval > 255 {
 				return nil, errors.New("Valeur max invalide pour uint8")
 			}
-
 			ppm.max = uint8(maxval)
 			headerSize = counter
 		}

@@ -94,7 +94,6 @@ func (pgm *PGM) Set(x, y int, value uint8) {
 }
 
 // Save saves the PGM image to a file and returns an error if there was a problem.
-// Save saves the PGM image to a file and returns an error if there was a problem.
 func (pgm *PGM) Save(filename string) error {
 	file, err := os.Create(filename)
 	if err != nil {
@@ -102,27 +101,38 @@ func (pgm *PGM) Save(filename string) error {
 	}
 	defer file.Close()
 
-	_, err = fmt.Fprintf(file, "%s\n", pgm.magicNumber)
-	if err != nil {
-		return err
-	}
+	newFile := bufio.NewWriter(file)
 
-	_, err = fmt.Fprintf(file, "%d %d\n", pgm.width, pgm.height)
-	if err != nil {
-		return err
-	}
+	fmt.Fprintf(newFile, "%s\n", pgm.magicNumber)
+
+	fmt.Fprintf(newFile, "%d %d\n", pgm.width, pgm.height)
+
 	// Write pixel values to the file for P2 format
-	for i := 0; i < pgm.height; i++ {
-		for j := 0; j < pgm.width; j++ {
-			_, err = fmt.Fprintf(file, "%d ", pgm.data[i][j])
+	for _, row := range pgm.data {
+		if pgm.magicNumber == "P2" {
+			// If the magic number is P2, write each value as an integer.
+			for _, pixel := range row {
+				_, err := fmt.Fprintf(newFile, "%d ", pixel)
+				if err != nil {
+					return err
+				}
+			}
+			_, err := fmt.Fprintln(newFile)
+			if err != nil {
+				return err
+			}
+		} else if pgm.magicNumber == "P5" {
+			// If the magic number is P5 we xrite juste the data
+			_, err := newFile.Write(row)
 			if err != nil {
 				return err
 			}
 		}
-		_, err = fmt.Fprintln(file) // Use Fprintln to write a newline
-		if err != nil {
-			return err
-		}
+	}
+
+	err = newFile.Flush()
+	if err != nil {
+		return err
 	}
 
 	return nil

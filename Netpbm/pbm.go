@@ -24,16 +24,20 @@ func ReadPBM(filename string) (*PBM, error) {
 	scanner := bufio.NewScanner(file)
 	var pbm PBM
 	var line string
-	//iterate the line of the file one by one
+	var PBMPfour PBM // New variable for P4 format
+
+	// Iterate through the lines of the file one by one
 	for scanner.Scan() {
 		line = scanner.Text()
-		//Skip comments
-		if string(line[0]) == "#" {
+
+		// Skip comments
+		if strings.HasPrefix(line, "#") {
 			continue
 		}
-		//the magic number and image dimensions
+
+		// The magic number and image dimensions
 		if pbm.magicNumber == "" {
-			if string(line[0]) == "P" && (line[1] == '1' || line[1] == '4') {
+			if strings.HasPrefix(line, "P") && (line[1] == '1' || line[1] == '4') {
 				pbm.magicNumber = line
 			} else {
 				return nil, fmt.Errorf("Invalid magic number: %s", line)
@@ -45,11 +49,26 @@ func ReadPBM(filename string) (*PBM, error) {
 				return nil, fmt.Errorf("Error converting dimensions: %v", err)
 			}
 			pbm.width, pbm.height = width, height
+
 			// Initialize the data matrix.
 			pbm.data = make([][]bool, pbm.height)
 			for i := range pbm.data {
 				pbm.data[i] = make([]bool, pbm.width)
 			}
+
+			// If it's P4 format, initialize the second PBM struct
+			if pbm.magicNumber == "P4" {
+				PBMPfour = PBM{
+					data:        make([][]bool, pbm.height),
+					width:       pbm.width,
+					height:      pbm.height,
+					magicNumber: "P4",
+				}
+				for i := range PBMPfour.data {
+					PBMPfour.data[i] = make([]bool, PBMPfour.width)
+				}
+			}
+
 			break
 		}
 	}
@@ -57,7 +76,8 @@ func ReadPBM(filename string) (*PBM, error) {
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("Error reading file: %v", err)
 	}
-	//Read the pixel and update a data matrix
+
+	// Read the pixel and update a data matrix
 	for i := 0; i < pbm.height; i++ {
 		if !scanner.Scan() {
 			return nil, fmt.Errorf("Unexpected end of file")
@@ -75,9 +95,43 @@ func ReadPBM(filename string) (*PBM, error) {
 					pbm.data[i][j] = false
 				}
 			}
+		} else if pbm.magicNumber == "P4" {
+			if pbm.magicNumber == "P4" {
+				var char int32
+				var rowdata []bool
+				for j := 0; j < pbm.width*2; j++ {
+					if len(rowdata) == pbm.width {
+						pbm.data[i] = rowdata
+						i++
+						for l := 0; l < len(rowdata); l++ {
+							rowdata = []bool{}
+						}
+					}
+					fmt.Printf("j %d\n", j)
+					char = int32(line[j])
+					fmt.Printf("char %d\n", char)
+					binary := fmt.Sprintf("%08b", char)
+					fmt.Println(boolget(binary))
+					boleanlist := boolget(binary)
+					for k := 0; k < len(binary); k++ {
+						rowdata = append(rowdata, boleanlist[k])
+						if len(rowdata) == pbm.width {
+							k = len(binary)
+						}
+					}
+					fmt.Println(rowdata)
+
+				}
+				if len(rowdata) == pbm.width {
+					pbm.data[i] = rowdata
+					i++
+					for l := 0; l < len(rowdata); l++ {
+						rowdata = []bool{}
+					}
+				}
+			}
 		}
 	}
-
 	return &pbm, nil
 }
 
@@ -93,6 +147,18 @@ func (pbm *PBM) At(x, y int) bool {
 	}
 	return pbm.data[y][x]
 }
+func boolget(binaryString string) []bool {
+	var boolData []bool
+	for _, char := range binaryString {
+		if char == '1' {
+			boolData = append(boolData, true)
+		} else if char == '0' {
+			boolData = append(boolData, false)
+		}
+	}
+	//fmt.Println(boolData)
+	return boolData
+}
 
 // Set sets the value of the pixel at (x, y).
 func (pbm *PBM) Set(x, y int, value bool) {
@@ -101,34 +167,30 @@ func (pbm *PBM) Set(x, y int, value bool) {
 
 // Save saves the PBM image to a file and returns an error if there was a problem.
 func (pbm *PBM) Save(filename string) error {
-	file, err := os.Create(filename) //create a new file
-	if err != nil {
-		return err // return a error if we found one when we create  the file
-	}
-	//Write a magic number and the dimensions in the file
-	_, err = file.WriteString(pbm.magicNumber + "\n") //Write tha magic number end return to the next line
-	_, err = fmt.Fprintf(file, "%d %d\n", pbm.width, pbm.height)
+	file, err := os.Create(filename)
 	if err != nil {
 		return err
 	}
-	//P1 format
-	if pbm.magicNumber == "P1" {
-		for _, list := range pbm.data {
-			for _, pixel := range list {
-				if pixel == true {
-					_, err = file.WriteString("1")
-				} else {
-					_, err = file.WriteString("0")
-				}
-				if err != nil {
-					return err // return an error if we encounter one when writing to the file
-				}
+	defer file.Close()
+
+	newFile := bufio.NewWriter(file)
+
+	// Write the magic number and the dimensions to the file
+	fmt.Fprintf(newFile, "%s\n", pbm.magicNumber)
+	fmt.Fprintf(newFile, "%d %d\n", pbm.width, pbm.height)
+
+	// Write the pixel data to the file
+	for _, row := range pbm.data {
+		for _, pixel := range row {
+			if pixel {
+				fmt.Fprintf(newFile, "1 ")
+			} else {
+				fmt.Fprintf(newFile, "0 ")
 			}
 		}
-	} else if pbm.magicNumber == "P4" {
-	} else {
-		return fmt.Errorf("Unsupported magic number: %s", pbm.magicNumber)
+		fmt.Fprintln(newFile) // Move to the next line after each row
 	}
+	newFile.Flush()
 	return nil
 }
 
